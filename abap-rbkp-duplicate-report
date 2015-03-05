@@ -1,0 +1,107 @@
+*&---------------------------------------------------------------------*
+*& Report  Z_H654_FIND_DUPLICATES
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+
+REPORT z_h654_find_duplicates.
+
+CLASS liv_invoices DEFINITION .
+  PUBLIC SECTION.
+    CLASS-DATA:
+          t_rbkp TYPE STANDARD TABLE OF rbkp READ-ONLY.
+    CLASS-METHODS main.
+    CLASS-METHODS   select_inv.
+    CLASS-METHODS check_ranges.
+
+  PRIVATE SECTION.
+    CLASS-DATA:
+      exit   TYPE abap_bool,
+      answer TYPE c.
+
+ENDCLASS.
+
+TABLES rbkp.
+SELECT-OPTIONS:
+  s_bldat FOR rbkp-bldat,
+  s_budat FOR rbkp-budat,
+  s_bukrs FOR rbkp-bukrs NO INTERVALS,
+  s_lifnr FOR rbkp-lifnr NO INTERVALS.
+
+data: gr_table   type ref to cl_salv_table.
+
+CLASS liv_invoices IMPLEMENTATION.
+  METHOD main.
+    data lr_functions type ref to cl_salv_functions_list.
+    liv_invoices=>check_ranges( ).
+    if answer = '2'.
+      return.
+    endif.
+    liv_invoices=>select_inv( ).
+      try.
+      cl_salv_table=>factory(
+        importing
+          r_salv_table = gr_table
+        changing
+          t_table      = t_rbkp ).
+    catch cx_salv_msg.                                  "#EC NO_HANDLER
+  endtry.
+
+  lr_functions = gr_table->get_functions( ).
+  lr_functions->set_all( ).
+  gr_table->display( ).
+  ENDMETHOD.
+
+  METHOD select_inv.
+    SELECT belnr gjahr bldat budat usnam cpudt cputm xblnr bukrs lifnr rbstat
+      FROM rbkp AS a INTO CORRESPONDING FIELDS OF TABLE t_rbkp
+        WHERE EXISTS
+          ( SELECT belnr FROM rbkp AS b
+              WHERE b~xblnr = a~xblnr
+          AND b~belnr <> a~belnr
+          AND bldat IN s_bldat
+          AND budat IN s_budat
+          AND bukrs IN s_bukrs
+          AND lifnr IN s_lifnr )
+      ORDER BY lifnr xblnr
+      .
+  ENDMETHOD.
+  METHOD check_ranges.
+    IF s_bldat IS INITIAL AND s_budat IS INITIAL.
+      CALL FUNCTION 'POPUP_TO_CONFIRM'
+        EXPORTING
+          titlebar              = 'Varmistus'
+*         DIAGNOSE_OBJECT       = ' '
+          text_question         = 'Et ole rajannut päivämääriä. Haku voi kestää kauan. Haluatko varmasti jatkaa?'
+          text_button_1         = 'Kyllä'(001)
+*         ICON_BUTTON_1         = ' '
+          text_button_2         = 'Ei'(002)
+*         ICON_BUTTON_2         = ' '
+          default_button        = '2'
+          display_cancel_button = ''
+*         USERDEFINED_F1_HELP   = ' '
+*         START_COLUMN          = 25
+*         START_ROW             = 6
+*         POPUP_TYPE            =
+*         IV_QUICKINFO_BUTTON_1 = ' '
+*         IV_QUICKINFO_BUTTON_2 = ' '
+        IMPORTING
+          answer                = answer
+*         TABLES
+*         PARAMETER             =
+*         EXCEPTIONS
+*         TEXT_NOT_FOUND        = 1
+*         OTHERS                = 2
+        .
+      IF sy-subrc <> 0.
+        answer = '2'.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+ENDCLASS.
+
+START-OF-SELECTION.
+  liv_invoices=>main( ).
